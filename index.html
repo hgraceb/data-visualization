@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>数据可视化</title>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <style>
+        .box{
+            position: relative;
+            width: 1500px;
+            /*只把hidden属性注释后frame仍不显示
+            还需设置swap函数内opacity属性*/
+            overflow: hidden;
+            margin-left: 0px;
+            z-index: 999;
+        }
+        .frame{
+            transition: all 0.8s;
+            position: absolute;
+            width:100%;
+            height: 16px;
+            /*background: green;*/
+            line-height: 100%;
+        }
+        .name{
+            float: left;
+            width: 10%;
+            text-align: right;
+            /*background-color: red;*/
+            margin-right: 6px;
+            height: 100%;
+        }
+        .bar{
+            transition: color 1s;
+            font-size: 16px;
+            float: left;
+            max-width: 70%;
+            min-width: 0%;
+            text-align: right;
+            background-color: blue;
+            height: 100%;
+            color:white;
+        }
+        .number{
+            float: left;
+            margin-left: 6px;
+        }
+        .coordinate{
+            transition: all 0.5s;
+            position: relative;
+            width:1000px;
+            height:1000px;
+            /*border: 1px solid #000;*/
+            float: left;
+            overflow: hidden;
+        }
+        .line1{
+            /*red为调试用色，会被覆盖*/
+            background:red;
+            color:red;
+            background:rgb(200,200,200);
+            color:rgb(200,200,200);
+            margin-left: 110%;
+            transition: opacity 1.5s;
+            position: absolute;
+            width: 1px;
+        }
+        .line2{
+            background:red;
+            color:red;
+            background:rgb(200,200,200);
+            color:rgb(200,200,200);
+            margin-left: 110%;
+            transition: opacity 1.5s;
+            position: absolute;
+            width: 1px;
+        }
+        .line3{
+            background:red;
+            color:red;
+            background:rgb(200,200,200);
+            color:rgb(200,200,200);
+            margin-left: 110%;
+            transition: opacity 1.5s;
+            position: absolute;
+            width: 1px;
+        }
+        .message{
+            position: relative;
+            height:100px;
+            /*border: 1px solid #000;*/
+        }
+        .message strong{
+            line-height: 100px;
+            font-size: 200%;
+        }
+        .primary{
+            float: left;
+        }
+        .year{
+            float: right;
+        }
+        .hold{
+            position: absolute;
+            left: 44%;
+        }
+        .primary_name{
+            margin-left: 20px;
+            color: red;
+        }
+        .hold_days{
+            position: absolute;
+            left: 60.5%;
+            color:red;
+        }
+    </style>
+</head>
+
+<body>
+	<!-- 打开文件 -->
+    <input type="file" id="files" style="display: none" onchange="fileImport();">
+    <input type="button" id="fileImport" value="打开文件" style="margin-left: 40%;">
+    <input type="button" value="重放" onclick="play_data();">
+    <input type="button" value="暂停" onclick="pause_data();">
+
+    <!-- 数据总体信息 -->
+    <div class="message">
+        <strong class="primary">榜首:</strong>
+        <strong class="primary_name"></strong>
+        <!-- <strong class="hold">持续天数:</strong>
+        <strong class="hold_days"></strong> -->
+        <strong class="year">2018</strong>
+    </div>
+    <!-- 柱形图 -->
+    <div class="box"></div>
+    <!-- 坐标 -->
+    <div class="coordinate"></div>
+
+    <script>
+    	"use strict"
+
+        var data=new Array();//存放上传文件内数据
+        var data_count=0;//数据读取进度
+        var plan=3;//数据播放进度
+
+        var interval=0;//播放时间间隔
+        var int_times=30;//两次数据之间过渡值数目
+        var frame_count=20;//页面显示的.frame个数
+
+        var int=-1;//定时器
+        var int_count=0;//定时器运行次数
+        var frame_height=24;//每个.frame高度，包含.bar高度与.frame之间间隔
+        var blank=0;//坐标单位长度        
+        var base=0;//将坐标单位长度转换为坐标单位像素
+        var line_class=1;//显示的.line
+        var blank_temp=0;//判断坐标单位长度是否改变
+        var max_number=0;//当前.number最大数值
+        var line_left=window.screen.width*0.08+5;//0坐标的margin-left数值
+        var text_left=0;//sapn文字与.line居中对齐,每增加一个字符左移4.4像素
+        var line_top=frame_count*frame_height*2+15;//通过控制line-height调整坐标值显示位置
+
+        //柱形图颜色
+        var bar_color=['#FF0000','#0000FF','#8A2BE2','#CC3333','#FF00FF','#FF1493','#FF69B4','#4169E1','#FFA500','#1E90FF','#6A5ACD','#FF6347','#D02090','#EE82EE','#FFCC00','#333399','#666699','#006699','#009999','#CCCC00','#663399','#FF9933','#99CC00','#994466'];
+
+        //动态创建坐标
+        for(let i=0;i<13;i++){
+            //三个.line分别对应三个不同的坐标单位长度
+            //当前最多完整显示一组line
+            //由当前坐标区间可得每组最多13个.line
+            let coordinate_line=$("<div class='line1'><span></span></div><div class='line2'><span></span></div><div class='line3'><span></span></div>");
+            $(".coordinate").append(coordinate_line);
+        }
+
+        document.onselectstart=function(){return false;}//禁止选择内容
+
+        //设置.message属性
+        $(".message").css("width",window.screen.width*0.75);
+
+        //设置.box属性
+        $(".box").css("width",window.screen.width*0.8);
+        $(".box").css("height",frame_count*frame_height+200);
+
+        // 设置.coordinate属性
+        $(".coordinate").css("width",window.screen.width*0.75);
+        $(".coordinate").css("height",frame_count*frame_height+30);
+        $(".coordinate").css("margin-top",-frame_count*frame_height-200);
+
+        // 设置.line属性
+        $(".line1").css("height",frame_count*frame_height-8);
+        $(".line2").css("height",frame_count*frame_height-8);
+        $(".line3").css("height",frame_count*frame_height-8);
+        
+        $(".line1").find("span").css("line-height",line_top+"px");
+        $(".line2").find("span").css("line-height",line_top+"px");
+        $(".line3").find("span").css("line-height",line_top+"px");
+
+        //点击导入按钮,使files触发点击事件,然后完成读取文件的操作
+		$("#fileImport").click(function () {
+		    $("#files").click();
+		})
+
+		function fileImport() {
+		    //获取读取文件的File对象
+		    var selectedFile = document.getElementById('files').files[0];
+		    if(selectedFile){//判断是否有选择文件，避免undefined报错
+			    let name = selectedFile.name;//读取选中文件的文件名
+			    let size = selectedFile.size;//读取选中文件的大小
+			    console.log("文件名:"+name);
+			    console.log("文件大小:"+(size/1024).toFixed(2)+"kb");
+			    if((size/1024).toFixed(2)>5120){//限制文件最大5M
+			    	console.log("数据文件过大，请重新选择");
+			    	return false;
+			    }
+			    for(var name_length in name){}//获取文件名长度，进而判断上传文件后缀名
+			    if(name[name_length-3]=='.'&&name[name_length-2]=='c'&&name[name_length-1]=='s'&&name[name_length]=='v'){
+                    data=new Array;//清空data变量内数据
+                    data_count=0;//初始化读取进度
+				    let reader = new FileReader();//这是核心,读取操作就是由它完成.
+				    reader.readAsText(selectedFile,'GB2312');//以GB2312格式读取文件的内容为文本内容
+		            reader.onabort = function () {  
+		                console.log("读取中断....");  
+		            }  
+		            reader.onerror = function () {  
+		                console.log("读取异常....");  
+		            }  
+				    reader.onload = function () {
+				    	for(var i=0;i<this.result.length;i++){
+				    		if(this.result[i]=='\n'){//每行最后一个字符是换行字符
+                                
+				    			data_count++;
+				    		}else if(this.result[i]!=','){//csv以逗号间隔原各个单元格内容
+			    				let j=0;
+				    			data[data_count]=new Array();
+                                if(data_count){
+                                    data[data_count][j++]=data_count-1;
+                                    data[data_count][j++]=bar_color[(data_count-1)%bar_color.length];
+                                    data[data_count][j++]=0;
+                                }
+                                data[data_count][j]='';
+			    				while(this.result[i]!='\r'){//每行倒数第二个字符是回车字符
+			    					data[data_count][j]+=this.result[i];
+			    					i++;
+			    					if(this.result[i]==','){//若是逗号则进行下一个数据读取
+			    						i++;
+			    						j++;
+			    						data[data_count][j]='';
+			    					}
+			    				}
+                                if(data_count){
+                                    data[data_count][2]=((parseFloat(data[data_count][6])-parseFloat(data[data_count][5]))/int_times).toFixed(3);
+                                }
+				    		}
+				    	}
+			    		console.log(data);
+                        play_data();//开始对数据进行动态展示
+				    }
+				}else{
+					console.log("请选择csv格式文件上传");
+                    alert("请选择csv格式文件上传")
+				}
+			}else{
+				console.log("请选择一个数据文件");
+                alert("请选择一个数据文件")
+			}
+		}
+
+		function play_data(){//动态展示数据
+			if(data.length){//判断当前data中是否已有数据
+                data_init();//初始化data数据
+				window.clearInterval(int);//清除定时器
+				create_frame(data.length-1);//重新创建.frame
+				sort_frame();//在定时器开始执行函数前进行预排序
+	    		int=setInterval(sort_frame,interval);//重置定时器
+			}else{
+				console.log("请先上传数据文件");
+			}
+		}
+
+        function data_init(){
+            $(".box").empty();//清除所有.frame
+            plan=5;//重置播放进度
+            max_number=0;//重置当前最大数值
+            int_count=0;
+            for(var i=1;i<data.length;i++){//初始化数据渐增数值
+                data[i][2]=((parseFloat(data[i][6])-parseFloat(data[i][5]))/int_times).toFixed(3);
+            }
+            $(".year").html(data[0][2]);
+        }
+
+        function pause_data(){
+            if(int==0){
+                int=setInterval(sort_frame,interval);
+            }else if(int==-1){
+                console.log("请先上传数据文件");
+            }else{
+                window.clearInterval(int);
+                int=0;
+            }            
+        }
+
+        //动态创建柱形图
+        function create_frame(count){
+	        for(let i=0;i<count;i++){//页面中总的.frame个数
+	            let box_frame=$("<div class='frame'><div class='name'>相厌</div><div class='bar'>相厌&nbsp&nbsp</div><div class='number'></div></div>");
+	            $(".box").append(box_frame);
+
+	            //设置.frame的margin-top和id
+                //.frame的id最终由高度决定，最上层.frame的id为0
+                //.frame交换时依据id改变相应的margin-top
+                //直接获取.frame的margin-top会有误差
+                $(".frame").eq(i).css("margin-top",i*frame_height);
+                $(".frame").eq(i).attr("id",i);
+
+                //设置.frame内文字和颜色
+                $(".frame").eq(i).css("color",bar_color[i%bar_color.length]);
+                $(".bar").eq(i).css("background-color",bar_color[i%bar_color.length]);
+                $(".name").eq(i).html(data[i+1][3]);
+                $(".bar").eq(i).html(data[i+1][4]+"&nbsp&nbsp");
+                $(".number").eq(i).html(data[i+1][5]);
+	        }
+        }
+
+        function sort_frame() {//排序.frame
+            let len = $(".frame").length;//.frame个数
+
+            for(let i=0;i<data.length-1;i++){
+            	//寻找当前时间点左右数据最大值
+            	//data[0]记录时间信息故跳过寻找
+            	if(max_number<parseFloat($(".number").eq(i).html())){            		
+            		max_number=parseFloat($(".number").eq(i).html()).toFixed(3);
+            	}
+            }
+            // console.log(max_number);
+            
+            for(let i=0;i<len;i++){
+
+            	if(plan<data[0].length+2){
+            		change_frame(i,parseFloat(data[i+1][2]));
+            	}else{
+            		window.clearInterval(int);
+            		console.log("数据动态展示结束");
+            		return;
+            	}
+
+                //.bar的width小于规定范围则隐其藏文字内容
+                if(parseInt($(".bar").eq(i).css("width"))>150){
+                    $(".bar").eq(i).css("color","rgba(255,255,255,1)");
+                }else{
+                    $(".bar").eq(i).css("color","rgba(255,255,255,0)");
+                }
+                
+            }
+
+
+            // $(".hold_days").html($("#0").find(".name").html()+'(测试)');
+            $(".primary_name").html($("#0").find(".name").html()+'-'+$("#0").find(".bar").html());
+            int_count++;
+            if(int_count>int_times){
+                $(".year").html(data[0][plan-2]);
+                plan++;
+                int_count=0;
+                console.log("plan:"+plan);
+                if(data[1][plan+1]){
+                    for(let i=1;i<data.length;i++){
+                        data[i][2]=((parseFloat(data[i][plan+1])-parseFloat(data[i][plan]))/int_times).toFixed(3);
+                        // console.log(i+':'+data[i][2]);
+                    }
+                }
+                
+            }
+
+
+            let preIndex, current;
+            for (let i = 1; i < len; i++) {//插入排序
+                preIndex = i - 1;
+                current = parseFloat($("#"+i).find('.number').html());
+                while (preIndex >= 0 && parseFloat($("#"+preIndex).find('.number').html()) < current) {
+                    swap(preIndex,preIndex + 1);
+                    preIndex--;
+                }
+            }
+
+            blank_base(parseFloat($("#0").find(".number").html()));
+
+            //为.line之间切换显示做准备
+            //每组.line依据当前blank以各自不同坐标单位长度移动
+            //注意乘除区别和2.5:2前后区别
+            
+            //前一组.line
+            //当数值从一个区间降到另一个区间时切换显示
+            //如区间[50,100)的坐标单位长度为5
+            //5对应的line_class为2
+            //则降到区间[10,50)时坐标单位长度为5/2.5=2
+            let last_line=line_class>1?line_class-1:3;
+            let last_blank=blank/(line_class==2?2.5:2);
+
+            //后一组.line，当数值从一个区间升到另一个区间时切换显示
+            let next_line=line_class<3?line_class+1:1;
+            let next_blank=blank*(line_class==2?2:2.5);
+            // console.log(line_class+':'+last_blank+':'+blank+':'+next_blank);
+
+            for(let i=0;i<frame_count;i++){
+            	text_left=-(i*blank).toString().length*4.4;
+
+                $(".line"+line_class).eq(i).find("span").html(i*blank);
+                $(".line"+line_class).eq(i).find("span").css("margin-left",text_left);
+                $(".line"+line_class).eq(i).css("margin-left",line_left+i*base);
+
+                if(max_number>i*blank){//超出.bar部分.line淡入淡出
+                    $(".line"+line_class).eq(i).css("opacity",1);
+                }else{
+                    $(".line"+line_class).eq(i).css("opacity",0);
+                }
+                
+                //.line通过控制透明度进行隐藏，但移动正常进行
+                $(".line"+last_line).eq(i).find("span").html(i*last_blank);
+                $(".line"+last_line).eq(i).find("span").css("margin-left",text_left);
+                $(".line"+last_line).eq(i).css("margin-left",line_left+i*(last_blank/parseFloat($("#0").find(".number").html())*parseFloat($("#0").find(".bar").css("width"))));
+
+                $(".line"+next_line).eq(i).find("span").html(i*next_blank);
+                $(".line"+next_line).eq(i).find("span").css("margin-left",text_left);
+                $(".line"+next_line).eq(i).css("margin-left",line_left+i*(next_blank/parseFloat($("#0").find(".number").html())*parseFloat($("#0").find(".bar").css("width"))));
+            }
+            if(blank_temp!=blank){//坐标单位改变则设置.line淡出
+                blank_temp=blank;
+                for(let i=1;i<=3;i++){
+                    if(i!=line_class){
+                        $(".line"+i).css("opacity",0);
+                    }
+                }
+            }
+        }
+
+        function blank_base(num){
+            //生成坐标单位长度
+            //区间与坐标单位长度同倍数改变
+            //
+            ///////////////////////////////
+            //  区 间            单位长度 //
+            // [10~25)   -------   2     //
+            // [25~50)   -------   5     //
+            // [50~100)  -------   10    //
+            ///////////////////////////////
+            ///
+            let len=parseInt(num).toString().length;//整数位有效数字位数
+            let str=num.toString();//传入数字总字符位数
+            let count=1;//与len共同决定决定blank小数位
+            let first_valid=0;//截取第一位有效数字
+            let second_valid=0;//截取第一位有效数字
+            for(let i=0;i<str.length;i++){
+                if(str[i]!='.'){
+                    count++;
+                    first_valid+=10*parseInt(str[i]);//将第一位有效数字作为十位数
+                    if(first_valid){
+                        if(i<str.length-1){//判断是否还有有效数字
+                            if(str[i+1]!='.'){
+                                second_valid=parseInt(str[i+1]);
+                            }else{
+                            	//默认小数点后还有有效数字位
+                            	//如果第一位有效数字后面一位是小数点
+                            	//则第二位有效数字在小数点后一位
+                                second_valid=parseInt(str[i+2]);
+                            }
+                        }
+                        if(first_valid+second_valid<25){
+                            blank=2*Math.pow(10,len-count);//重置坐标单位长度
+                            line_class=1;//选择.line1可见，即opacity=1
+                        }else if(first_valid+second_valid<50){
+                            blank=5*Math.pow(10,len-count);
+                            line_class=2;
+                        }else{
+                            blank=10*Math.pow(10,len-count);
+                            line_class=3;
+                        }
+                        base=blank/parseFloat($("#0").find(".number").html())*parseFloat($("#0").find(".bar").css("width"));
+                        return;//截取两位有效数字后结束循环
+                    }
+                }
+            }
+        }
+
+        function change_frame(id,add){//动态改变.bar宽度和.number数值
+            var width=parseFloat(data[id+1][plan])+int_count*add;
+            $(".number").eq(id).html(width.toFixed(2));//改变.number数值
+            $(".bar").eq(id).css("width",(width/max_number)*70+"%");//改变.bar宽度
+        }
+
+        function swap(id_1,id_2){
+            //传入id,交换两个柱形图的margin-top和id
+            //设置margin-left和opacity属性形成动画效果
+            //可见.frame之间交换只有margin-top变化动画效果
+            //可见.frame与不可见.frame交换加强margin-left与opacity动画效果
+            $("#"+id_1).attr("id","temp");
+            $("#"+id_2).attr("id",id_1);
+            $("#temp").attr("id",id_2);
+            $("#"+id_1).css("margin-top",(id_1<frame_count?id_1:id_1+1)*frame_height);
+            $("#"+id_2).css("margin-top",(id_2<frame_count?id_2:id_2+1)*frame_height);
+            $("#"+id_1).css("margin-left",id_1<frame_count?0:-25);
+            $("#"+id_2).css("margin-left",id_2<frame_count?0:-25);
+            $("#"+id_1).css("opacity",id_1<frame_count?1:0);
+            $("#"+id_2).css("opacity",id_2<frame_count?1:0);
+        }
+    </script>
+</body>
+</html>
